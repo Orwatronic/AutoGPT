@@ -149,21 +149,6 @@ export const CredentialsInput: FC<{
     }
   }, [credentials, selectedCredentials, onSelectCredentials]);
 
-  if (!credentials || credentials.isLoading) {
-    return null;
-  }
-
-  const {
-    provider,
-    providerName,
-    supportsApiKey,
-    supportsOAuth2,
-    supportsUserPassword,
-    supportsHostScoped,
-    savedCredentials,
-    oAuthCallback,
-  } = credentials;
-
   // Helper function to extract host from URL
   const getHostFromUrl = (url: string): string | null => {
     try {
@@ -178,46 +163,55 @@ export const CredentialsInput: FC<{
   const currentUrl = siblingInputs?.url;
   const currentHost = currentUrl ? getHostFromUrl(currentUrl) : null;
 
-  // For host-scoped credentials, we need to be more lenient with matching
-  // since the title might be auto-generated from host
-  const hostScopedCredentialsForCurrentHost = currentHost
-    ? savedCredentials.filter(
-        (c) => c.type === "host_scoped" && c.title === currentHost,
-      )
-    : [];
+  const {
+    hostScopedCredentialsForCurrentHost,
+    hasRelevantCredentials,
+    singleCredential,
+  } = useMemo(() => {
+    if (!credentials || !("savedCredentials" in credentials)) {
+      return {
+        hostScopedCredentialsForCurrentHost: [],
+        hasRelevantCredentials: false,
+        singleCredential: null,
+      };
+    }
 
-  // For non-host-scoped credentials, show all of them
-  const nonHostScopedCredentials = savedCredentials.filter(
-    (c) => c.type !== "host_scoped",
-  );
+    // For host-scoped credentials, we need to be more lenient with matching
+    // since the title might be auto-generated from host
+    const hostScoped = currentHost
+      ? credentials.savedCredentials.filter(
+          (c) => c.type === "host_scoped" && c.title === currentHost,
+        )
+      : [];
 
-  // Check if we have relevant credentials for current context
-  const hasRelevantCredentials =
-    nonHostScopedCredentials.length > 0 ||
-    hostScopedCredentialsForCurrentHost.length > 0;
+    // For non-host-scoped credentials, show all of them
+    const nonHostScoped = credentials.savedCredentials.filter(
+      (c) => c.type !== "host_scoped",
+    );
 
-  const singleCredential = useMemo(() => {
-    // For host-scoped credentials, check if there's only one relevant credential for current host
-    if (supportsHostScoped && currentHost) {
-      const relevantCredentials = nonHostScopedCredentials.concat(
-        hostScopedCredentialsForCurrentHost,
-      );
+    // Check if we have relevant credentials for current context
+    const hasRelevant = nonHostScoped.length > 0 || hostScoped.length > 0;
+
+    // Determine single credential for auto-selection
+    let single = null;
+    if (credentials.supportsHostScoped && currentHost) {
+      const relevantCredentials = nonHostScoped.concat(hostScoped);
       if (relevantCredentials.length === 1) {
-        return relevantCredentials[0];
+        single = relevantCredentials[0];
       }
     } else {
       // For non-host-scoped credentials, use original logic
-      if (savedCredentials.length === 1) return savedCredentials[0];
+      if (credentials.savedCredentials.length === 1) {
+        single = credentials.savedCredentials[0];
+      }
     }
 
-    return null;
-  }, [
-    savedCredentials,
-    nonHostScopedCredentials,
-    hostScopedCredentialsForCurrentHost,
-    supportsHostScoped,
-    currentHost,
-  ]);
+    return {
+      hostScopedCredentialsForCurrentHost: hostScoped,
+      hasRelevantCredentials: hasRelevant,
+      singleCredential: single,
+    };
+  }, [credentials, currentHost]);
 
   // If only 1 credential is available, auto-select it and hide this input
   useEffect(() => {
@@ -226,9 +220,25 @@ export const CredentialsInput: FC<{
     }
   }, [singleCredential, selectedCredentials, onSelectCredentials]);
 
+  // Early returns after all hooks
+  if (!credentials || credentials.isLoading) {
+    return null;
+  }
+
   if (singleCredential) {
     return null;
   }
+
+  const {
+    provider,
+    providerName,
+    supportsApiKey,
+    supportsOAuth2,
+    supportsUserPassword,
+    supportsHostScoped,
+    savedCredentials,
+    oAuthCallback,
+  } = credentials;
 
   async function handleOAuthLogin() {
     setOAuthError(null);
