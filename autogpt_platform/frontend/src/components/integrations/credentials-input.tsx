@@ -63,6 +63,7 @@ export const providerIcons: Record<
   github: FaGithub,
   google: FaGoogle,
   groq: fallbackIcon,
+  http: fallbackIcon,
   notion: NotionLogoIcon,
   nvidia: fallbackIcon,
   discord: FaDiscord,
@@ -127,6 +128,8 @@ export const CredentialsInput: FC<{
     isUserPasswordCredentialsModalOpen,
     setUserPasswordCredentialsModalOpen,
   ] = useState(false);
+  const [isHostScopedCredentialsModalOpen, setHostScopedCredentialsModalOpen] =
+    useState(false);
   const [isOAuth2FlowInProgress, setOAuth2FlowInProgress] = useState(false);
   const [oAuthPopupController, setOAuthPopupController] =
     useState<AbortController | null>(null);
@@ -146,23 +149,7 @@ export const CredentialsInput: FC<{
     }
   }, [credentials, selectedCredentials, onSelectCredentials]);
 
-  const singleCredential = useMemo(() => {
-    if (!credentials || !("savedCredentials" in credentials)) return null;
-
-    if (credentials.savedCredentials.length === 1)
-      return credentials.savedCredentials[0];
-
-    return null;
-  }, [credentials]);
-
-  // If only 1 credential is available, auto-select it and hide this input
-  useEffect(() => {
-    if (singleCredential && !selectedCredentials) {
-      onSelectCredentials(singleCredential);
-    }
-  }, [singleCredential, selectedCredentials, onSelectCredentials]);
-
-  if (!credentials || credentials.isLoading || singleCredential) {
+  if (!credentials || credentials.isLoading) {
     return null;
   }
 
@@ -172,9 +159,76 @@ export const CredentialsInput: FC<{
     supportsApiKey,
     supportsOAuth2,
     supportsUserPassword,
+    supportsHostScoped,
     savedCredentials,
     oAuthCallback,
   } = credentials;
+
+  // Helper function to extract host from URL
+  const getHostFromUrl = (url: string): string | null => {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname;
+    } catch {
+      return null;
+    }
+  };
+
+  // Get current host from siblingInputs
+  const currentUrl = siblingInputs?.url;
+  const currentHost = currentUrl ? getHostFromUrl(currentUrl) : null;
+
+  // For host-scoped credentials, we need to be more lenient with matching
+  // since the title might be auto-generated from host
+  const hostScopedCredentialsForCurrentHost = currentHost
+    ? savedCredentials.filter(
+        (c) => c.type === "host_scoped" && c.title === currentHost,
+      )
+    : [];
+
+  // For non-host-scoped credentials, show all of them
+  const nonHostScopedCredentials = savedCredentials.filter(
+    (c) => c.type !== "host_scoped",
+  );
+
+  // Check if we have relevant credentials for current context
+  const hasRelevantCredentials =
+    nonHostScopedCredentials.length > 0 ||
+    hostScopedCredentialsForCurrentHost.length > 0;
+
+  const singleCredential = useMemo(() => {
+    // For host-scoped credentials, check if there's only one relevant credential for current host
+    if (supportsHostScoped && currentHost) {
+      const relevantCredentials = nonHostScopedCredentials.concat(
+        hostScopedCredentialsForCurrentHost,
+      );
+      if (relevantCredentials.length === 1) {
+        return relevantCredentials[0];
+      }
+    } else {
+      // For non-host-scoped credentials, use original logic
+      if (savedCredentials.length === 1) return savedCredentials[0];
+    }
+
+    return null;
+  }, [
+    savedCredentials,
+    nonHostScopedCredentials,
+    hostScopedCredentialsForCurrentHost,
+    supportsHostScoped,
+    currentHost,
+  ]);
+
+  // If only 1 credential is available, auto-select it and hide this input
+  useEffect(() => {
+    if (singleCredential && !selectedCredentials) {
+      onSelectCredentials(singleCredential);
+    }
+  }, [singleCredential, selectedCredentials, onSelectCredentials]);
+
+  if (singleCredential) {
+    return null;
+  }
 
   async function handleOAuthLogin() {
     setOAuthError(null);
@@ -265,7 +319,7 @@ export const CredentialsInput: FC<{
     );
   }
 
-  const ProviderIcon = providerIcons[provider];
+  const ProviderIcon = providerIcons[provider] || fallbackIcon;
   const modals = (
     <>
       {supportsApiKey && (
@@ -299,6 +353,18 @@ export const CredentialsInput: FC<{
           siblingInputs={siblingInputs}
         />
       )}
+      {supportsHostScoped && (
+        <HostScopedCredentialsModal
+          schema={schema}
+          open={isHostScopedCredentialsModalOpen}
+          onClose={() => setHostScopedCredentialsModalOpen(false)}
+          onCredentialsCreate={(creds) => {
+            onSelectCredentials(creds);
+            setHostScopedCredentialsModalOpen(false);
+          }}
+          siblingInputs={siblingInputs}
+        />
+      )}
     </>
   );
 
@@ -311,8 +377,8 @@ export const CredentialsInput: FC<{
     </div>
   );
 
-  // No saved credentials yet
-  if (savedCredentials.length === 0) {
+  // Show credentials creation UI when no relevant credentials exist
+  if (!hasRelevantCredentials) {
     return (
       <div>
         {fieldHeader}
@@ -336,6 +402,14 @@ export const CredentialsInput: FC<{
               Enter username and password
             </Button>
           )}
+          {supportsHostScoped && (
+            <Button onClick={() => setHostScopedCredentialsModalOpen(true)}>
+              <ProviderIcon className="mr-2 h-4 w-4" />
+              {currentHost
+                ? `Enter sensitive headers for ${currentHost}`
+                : "Enter sensitive headers"}
+            </Button>
+          )}
         </div>
         {modals}
         {oAuthError && (
@@ -352,6 +426,12 @@ export const CredentialsInput: FC<{
     } else if (newValue === "add-api-key") {
       // Open API key dialog
       setAPICredentialsModalOpen(true);
+    } else if (newValue === "add-user-password") {
+      // Open user password dialog
+      setUserPasswordCredentialsModalOpen(true);
+    } else if (newValue === "add-host-scoped") {
+      // Open host-scoped credentials dialog
+      setHostScopedCredentialsModalOpen(true);
     } else {
       const selectedCreds = savedCredentials.find((c) => c.id == newValue)!;
 
@@ -400,6 +480,13 @@ export const CredentialsInput: FC<{
                 {credentials.title}
               </SelectItem>
             ))}
+          {hostScopedCredentialsForCurrentHost.map((credentials, index) => (
+            <SelectItem key={index} value={credentials.id}>
+              <ProviderIcon className="mr-2 inline h-4 w-4" />
+              <IconKey className="mr-1.5 inline" />
+              {credentials.title}
+            </SelectItem>
+          ))}
           <SelectSeparator />
           {supportsOAuth2 && (
             <SelectItem value="sign-in">
@@ -419,6 +506,15 @@ export const CredentialsInput: FC<{
               Add new user password
             </SelectItem>
           )}
+          {supportsHostScoped &&
+            hostScopedCredentialsForCurrentHost.length === 0 && (
+              <SelectItem value="add-host-scoped">
+                <IconKey className="mr-1.5 inline" />
+                {currentHost
+                  ? `Add sensitive headers for ${currentHost}`
+                  : "Add sensitive headers"}
+              </SelectItem>
+            )}
         </SelectContent>
       </Select>
       {modals}
@@ -681,6 +777,239 @@ export const UserPasswordCredentialsModal: FC<{
             />
             <Button type="submit" className="w-full">
               Save & use this user login
+            </Button>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+export const HostScopedCredentialsModal: FC<{
+  schema: BlockIOCredentialsSubSchema;
+  open: boolean;
+  onClose: () => void;
+  onCredentialsCreate: (creds: CredentialsMetaInput) => void;
+  siblingInputs?: Record<string, any>;
+}> = ({ schema, open, onClose, onCredentialsCreate, siblingInputs }) => {
+  const credentials = useCredentials(schema, siblingInputs);
+
+  // Helper function to extract host from URL
+  const getHostFromUrl = (url: string): string | null => {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname;
+    } catch {
+      return null;
+    }
+  };
+
+  // Get current host from siblingInputs
+  const currentUrl = siblingInputs?.url;
+  const currentHost = currentUrl ? getHostFromUrl(currentUrl) : "";
+
+  const formSchema = z.object({
+    host: z.string().min(1, "Host is required"),
+    title: z.string().min(1, "Name is required"),
+    headers: z.record(z.string()).optional(),
+  });
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      host: currentHost || "",
+      title: currentHost || "Manual Entry",
+      headers: {},
+    },
+  });
+
+  const [headerPairs, setHeaderPairs] = useState<
+    Array<{ key: string; value: string }>
+  >([{ key: "", value: "" }]);
+
+  if (
+    !credentials ||
+    credentials.isLoading ||
+    !credentials.supportsHostScoped
+  ) {
+    return null;
+  }
+
+  const { provider, providerName, createHostScopedCredentials } = credentials;
+
+  const addHeaderPair = () => {
+    setHeaderPairs([...headerPairs, { key: "", value: "" }]);
+  };
+
+  const removeHeaderPair = (index: number) => {
+    if (headerPairs.length > 1) {
+      setHeaderPairs(headerPairs.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateHeaderPair = (
+    index: number,
+    field: "key" | "value",
+    value: string,
+  ) => {
+    const newPairs = [...headerPairs];
+    newPairs[index][field] = value;
+    setHeaderPairs(newPairs);
+  };
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    // Convert header pairs to object, filtering out empty pairs
+    const headers = headerPairs.reduce(
+      (acc, pair) => {
+        if (pair.key.trim() && pair.value.trim()) {
+          acc[pair.key.trim()] = pair.value.trim();
+        }
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
+
+    const newCredentials = await createHostScopedCredentials({
+      host: values.host,
+      title: values.title,
+      headers,
+    });
+
+    onCredentialsCreate({
+      provider,
+      id: newCredentials.id,
+      type: "host_scoped",
+      title: newCredentials.title,
+    });
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add sensitive headers for {providerName}</DialogTitle>
+          {schema.description && (
+            <DialogDescription>{schema.description}</DialogDescription>
+          )}
+        </DialogHeader>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="host"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Host Pattern</FormLabel>
+                  <FormDescription>
+                    {currentHost
+                      ? "Auto-populated from the URL field. Headers will be applied to requests to this host."
+                      : "Enter the host/domain to match against request URLs (e.g., api.example.com)."}
+                  </FormDescription>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      readOnly={!!currentHost}
+                      placeholder={
+                        currentHost
+                          ? undefined
+                          : "Enter host (e.g., api.example.com)"
+                      }
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="title"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Name</FormLabel>
+                  <FormDescription>
+                    {currentHost
+                      ? "Auto-named based on the host for easy identification."
+                      : "Enter a name for these credentials."}
+                  </FormDescription>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      readOnly={!!currentHost}
+                      placeholder={
+                        currentHost
+                          ? undefined
+                          : "Enter a name for this credential"
+                      }
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="space-y-2">
+              <FormLabel>Headers</FormLabel>
+              <FormDescription>
+                Add sensitive headers (like Authorization, X-API-Key) that
+                should be automatically included in requests to the specified
+                host.
+              </FormDescription>
+
+              {headerPairs.map((pair, index) => (
+                <div key={index} className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Input
+                      placeholder="Header name (e.g., Authorization)"
+                      value={pair.key}
+                      onChange={(e) =>
+                        updateHeaderPair(index, "key", e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      type="password"
+                      placeholder="Header value (e.g., Bearer token123)"
+                      value={pair.value}
+                      onChange={(e) =>
+                        updateHeaderPair(index, "value", e.target.value)
+                      }
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => removeHeaderPair(index)}
+                    disabled={headerPairs.length === 1}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addHeaderPair}
+                className="w-full"
+              >
+                Add Another Header
+              </Button>
+            </div>
+
+            <Button type="submit" className="w-full">
+              Save & use these credentials
             </Button>
           </form>
         </Form>

@@ -209,11 +209,19 @@ async def execute_node(
     creds_lock = None
     input_model = cast(type[BlockSchema], node_block.input_schema)
     for field_name, input_type in input_model.get_credentials_fields().items():
-        credentials_meta = input_type(**input_data[field_name])
-        credentials, creds_lock = await creds_manager.acquire(
-            user_id, credentials_meta.id
+        credentials_meta = (
+            input_type(**input_data[field_name]) if field_name in input_data else None
         )
-        extra_exec_kwargs[field_name] = credentials
+
+        # Only acquire credentials if an ID is provided and not empty
+        if credentials_meta and credentials_meta.id and credentials_meta.id.strip():
+            credentials, creds_lock = await creds_manager.acquire(
+                user_id, credentials_meta.id
+            )
+            extra_exec_kwargs[field_name] = credentials
+        else:
+            # No credentials provided - pass None to the block
+            extra_exec_kwargs[field_name] = None
 
     output_size = 0
     try:

@@ -19,6 +19,7 @@ from typing import (
     TypeVar,
     get_args,
 )
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from prisma.enums import CreditTransactionType
@@ -240,13 +241,61 @@ class UserPasswordCredentials(_BaseCredentials):
         return f"Basic {base64.b64encode(f'{self.username.get_secret_value()}:{self.password.get_secret_value()}'.encode()).decode()}"
 
 
+class HostScopedCredentials(_BaseCredentials):
+    type: Literal["host_scoped"] = "host_scoped"
+    host: str = Field(description="The host/URI pattern to match against request URLs")
+    headers: dict[str, SecretStr] = Field(
+        description="Key-value header map to add to matching requests",
+        default_factory=dict,
+    )
+
+    @field_serializer("headers")
+    def serialize_headers(self, headers: dict[str, SecretStr]) -> dict[str, str]:
+        """Serialize headers by extracting secret values."""
+        return {key: value.get_secret_value() for key, value in headers.items()}
+
+    def get_headers_dict(self) -> dict[str, str]:
+        """Get headers with secret values extracted."""
+        return {key: value.get_secret_value() for key, value in self.headers.items()}
+
+    def auth_header(self) -> str:
+        """Get authorization header for backward compatibility."""
+        auth_headers = self.get_headers_dict()
+        if "Authorization" in auth_headers:
+            return auth_headers["Authorization"]
+        return ""
+
+    def matches_url(self, url: str) -> bool:
+        """Check if this credential should be applied to the given URL."""
+
+        parsed_url = urlparse(url)
+        # Extract hostname without port
+        request_host = parsed_url.hostname
+        if not request_host:
+            return False
+
+        # Simple host matching - exact match or wildcard subdomain match
+        if self.host == request_host:
+            return True
+
+        # Support wildcard matching (e.g., "*.example.com" matches "api.example.com")
+        if self.host.startswith("*."):
+            domain = self.host[2:]  # Remove "*."
+            return request_host.endswith(f".{domain}") or request_host == domain
+
+        return False
+
+
 Credentials = Annotated[
-    OAuth2Credentials | APIKeyCredentials | UserPasswordCredentials,
+    OAuth2Credentials
+    | APIKeyCredentials
+    | UserPasswordCredentials
+    | HostScopedCredentials,
     Field(discriminator="type"),
 ]
 
 
-CredentialsType = Literal["api_key", "oauth2", "user_password"]
+CredentialsType = Literal["api_key", "oauth2", "user_password", "host_scoped"]
 
 
 class OAuthState(BaseModel):

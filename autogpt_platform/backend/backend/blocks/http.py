@@ -3,11 +3,18 @@ import logging
 from enum import Enum
 from io import BytesIO
 from pathlib import Path
+from typing import Literal
 
 import aiofiles
 
 from backend.data.block import Block, BlockCategory, BlockOutput, BlockSchema
-from backend.data.model import SchemaField
+from backend.data.model import (
+    CredentialsField,
+    CredentialsMetaInput,
+    HostScopedCredentials,
+    SchemaField,
+)
+from backend.integrations.providers import ProviderName
 from backend.util.file import (
     MediaFileType,
     get_exec_file_path,
@@ -17,6 +24,18 @@ from backend.util.file import (
 from backend.util.request import Requests
 
 logger = logging.getLogger(name=__name__)
+
+
+# Host-scoped credentials for HTTP requests
+HttpCredentials = CredentialsMetaInput[
+    Literal[ProviderName.HTTP], Literal["host_scoped"]
+]
+
+
+def HttpCredentialsField() -> HttpCredentials:
+    return CredentialsField(
+        description="HTTP host-scoped credentials for automatic header injection"
+    )
 
 
 class HttpMethod(Enum):
@@ -42,6 +61,10 @@ class SendWebRequestBlock(Block):
         headers: dict[str, str] = SchemaField(
             description="The headers to include in the request",
             default_factory=dict,
+        )
+        credentials: HttpCredentials = SchemaField(
+            description="HTTP host-scoped credentials for automatic header injection",
+            default_factory=HttpCredentialsField,
         )
         json_format: bool = SchemaField(
             title="JSON format",
@@ -104,7 +127,12 @@ class SendWebRequestBlock(Block):
         return files_payload
 
     async def run(
-        self, input_data: Input, *, graph_exec_id: str, **kwargs
+        self,
+        input_data: Input,
+        *,
+        credentials: HostScopedCredentials | None = None,
+        graph_exec_id: str,
+        **kwargs,
     ) -> BlockOutput:
         # ─── Parse/normalise body ────────────────────────────────────
         body = input_data.body
@@ -144,11 +172,28 @@ class SendWebRequestBlock(Block):
                 "json_format=True cannot be combined with file uploads; set json_format=False and put form fields in `body`."
             )
 
+        # ─── Apply host-scoped credentials ──────────────────────────
+        extra_headers = {}
+
+        if credentials:
+            if credentials.matches_url(input_data.url):
+                logger.debug(
+                    f"Applying host-scoped credentials {credentials.id} for URL {input_data.url}"
+                )
+                extra_headers.update(credentials.get_headers_dict())
+            else:
+                logger.warning(
+                    f"Host-scoped credentials {credentials.id} do not match URL {input_data.url}"
+                )
+
+        # Merge with user-provided headers (user headers take precedence)
+        final_headers = {**extra_headers, **input_data.headers}
+
         # ─── Execute request ─────────────────────────────────────────
         response = await Requests().request(
             input_data.method.value,
             input_data.url,
-            headers=input_data.headers,
+            headers=final_headers,
             files=files_payload if use_files else None,
             # * If files → multipart ⇒ pass form‑fields via data=
             data=body if not input_data.json_format else None,

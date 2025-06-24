@@ -462,11 +462,13 @@ async def _validate_node_input_credentials(
                 credentials_meta = credentials_meta_type.model_validate(
                     node.input_default[field_name]
                 )
-            else:
+            elif field_name in block.input_schema.get_required_fields():
                 raise ValueError(
                     f"Credentials absent for {block.name} node #{node.id} "
                     f"input '{field_name}'"
                 )
+            else:
+                continue
 
             # Fetch the corresponding Credentials and perform sanity checks
             credentials = await get_integration_credentials_store().get_creds_by_id(
