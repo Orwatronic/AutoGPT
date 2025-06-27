@@ -1,0 +1,9 @@
+Fix duckduckgo rate limiting (#4592)
+
+* Fix duckduckgo rate limiting
+
+* use list instead of loop
+
+---------
+
+Co-authored-by: Reinier van der Leer <github@pwuts.nl>

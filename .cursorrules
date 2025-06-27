@@ -1,0 +1,94 @@
+# CURSOR RULES FOR AUTOGPT REAL ESTATE INVESTMENT INTELLIGENCE PROJECT
+
+## 🎯 CRITICAL GLOBAL RULE
+**Always verify and confirm the target directory before creating any new files.** If the requested directory doesn't exist, confirm with the user whether to create it, or if it's meant to be in an existing path.
+
+## File Organization Rules
+
+### 1. NEVER create files in the root directory unless explicitly specified
+- Root directory is ONLY for: README.md, .gitignore, .cursorrules, package files, architecture docs
+- All project files must go in appropriate subdirectories
+
+### 2. Directory Structure Enforcement
+- `/real-estate-mvp/scrapers/` = Data collection scripts (bayut_scraper.py, etc.)
+- `/real-estate-mvp/analysis/` = AI analysis engines (ai_investment_analyzer.py, etc.)  
+- `/real-estate-mvp/reports/` = Generated reports and outputs
+- `/real-estate-mvp/data/` = Property data files (.json)
+- `/real-estate-mvp/autogpt_blocks/` = Custom AutoGPT blocks
+- `/real-estate-mvp/rag/` = RAG components (vector stores, embeddings, retrievers)
+- `/project-tracker/` = Project documentation and tracking
+- `/.cursor/rules/` = Cursor AI configuration and guidelines
+
+### 3. File Creation Protocol
+BEFORE creating any file, explicitly specify the full path:
+- ✅ CORRECT: `real-estate-mvp/scrapers/new_scraper.py`
+- ❌ WRONG: `new_scraper.py` (defaults to root)
+- ✅ CORRECT: `real-estate-mvp/analysis/new_analyzer.py` 
+- ❌ WRONG: `new_analyzer.py` (defaults to root)
+
+### 4. Pre-Creation Checklist
+Before creating any file, ask:
+1. What is the PURPOSE of this file?
+2. Which DIRECTORY should it be in based on purpose?
+3. Does the directory exist? (create if needed)
+4. Am I specifying the FULL PATH including subdirectory?
+
+### 5. Naming Conventions
+- Scrapers: `*_scraper.py` 
+- Analyzers: `*_analyzer.py`
+- RAG Components: `*_retriever.py`, `*_embedder.py`
+- AutoGPT Blocks: `*_block.py`
+- Reports: `*_report_YYYYMMDD.txt`
+- Data: `*_data_YYYYMMDD.json`
+
+### 6. Movement Protocol  
+If a file is created in wrong location:
+1. Immediately identify the mistake
+2. Move to correct location using `move` command with `-Force`
+3. Update any references/imports
+4. Test functionality in new location
+
+### 7. Current Project Structure
+```
+AutoGPT/
+├── .cursor/
+│   └── rules/                # AI guidelines and rules
+├── project-tracker/          # Project management
+├── real-estate-mvp/
+│   ├── scrapers/            # Data collection
+│   ├── analysis/            # AI processing
+│   ├── rag/                 # RAG components
+│   ├── reports/             # Generated outputs
+│   ├── data/                # Property data
+│   └── autogpt_blocks/      # Custom AutoGPT blocks
+└── [root files: .cursorrules, README.md, architecture docs]
+```
+
+### 8. Enforcement
+- ALWAYS double-check file location after creation
+- If file appears in root when it shouldn't be there, IMMEDIATELY move it
+- Reference this file before creating any new files
+
+## Business Context
+This is a **REAL ESTATE INVESTMENT INTELLIGENCE** system targeting UAE/Saudi Arabia market, built on AutoGPT platform.
+
+**Revenue Targets:**
+- Individual: $1,500/month (Weekly reports, alerts, dashboard)
+- Agency: $3,000/month (+ Lead gen, competitive analysis)  
+- Enterprise: $5,000/month (+ Custom analysis, portfolio optimization)
+
+**Future Expansion:**
+- RAG integration for market research and property intelligence
+- Multi-market expansion (GCC, MENA region)
+- Advanced AI agent capabilities for client acquisition
+- Custom AutoGPT blocks for real estate workflows
+
+## Core Technologies
+- **AutoGPT** (primary agent framework)
+- **Python 3.x** (development language)
+- **RAG Components** (for market intelligence)
+- **Vector Databases** (property data indexing)
+- **OpenAI API** (LLM integration)
+- **Docker** (deployment)
+
+## Remember: ORGANIZATION = MONETIZATION = SCALABILITY 
